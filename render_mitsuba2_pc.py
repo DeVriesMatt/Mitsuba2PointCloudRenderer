@@ -5,7 +5,7 @@ import Imath
 from PIL import Image
 from plyfile import PlyData, PlyElement
 
-PATH_TO_MITSUBA2 = "/home/tolga/Codes/mitsuba2/build/dist/mitsuba"  # mitsuba exectuable
+PATH_TO_MITSUBA2 = "/home/mvries/Documents/Applications/mitsuba2/build/dist/mitsuba"  # mitsuba exectuable
 
 # replaced by command line arguments
 # PATH_TO_NPY = 'pcl_ex.npy' # the tensor to load
