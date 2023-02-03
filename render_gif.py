@@ -25,7 +25,7 @@ xml_head = \
         </transform>
         <float name="fov" value="25"/>
         <sampler type="independent">
-            <integer name="sampleCount" value="200"/>
+            <integer name="sampleCount" value="100"/>
         </sampler>
         <film type="hdrfilm">
             <integer name="width" value="1920"/>
@@ -33,14 +33,14 @@ xml_head = \
             <rfilter type="gaussian"/>
         </film>
     </sensor>
-    
+
     <bsdf type="roughplastic" id="surfaceMaterial">
         <string name="distribution" value="ggx"/>
-        <float name="alpha" value="0.05"/>
+        <float name="alpha" value="0.1"/>
         <float name="intIOR" value="1.46"/>
         <rgb name="diffuseReflectance" value="1,1,1"/> <!-- default 0.5 -->
     </bsdf>
-    
+
 """
 
 # I also use a smaller point size
@@ -66,7 +66,7 @@ xml_tail = \
             <translate x="0" y="0" z="-0.5"/>
         </transform>
     </shape>
-    
+
     <shape type="rectangle">
         <transform name="toWorld">
             <scale x="10" y="10" z="1"/>
@@ -140,6 +140,14 @@ def ConvertEXRToJPG(exrfile, jpgfile):
     Image.merge("RGB", rgb8).save(jpgfile, "JPEG", quality=95)
 
 
+def rotation(points, theta):
+    R = np.asarray([[np.cos(theta), -np.sin(theta), 0],
+                    [np.sin(theta), np.cos(theta), 0],
+                    [0, 0, 1]])
+    new_points = points @ R
+    return new_points
+
+
 def main(argv):
     if (len(argv) < 2):
         print('filename to npy/ply is not passed as argument. terminated.')
@@ -147,64 +155,72 @@ def main(argv):
 
     pathToFile = argv[1]
 
-    filename, file_extension = os.path.splitext(pathToFile)
-    folder = os.path.dirname(pathToFile)
-    filename = os.path.basename(pathToFile)
+    degrees = argv[2]
 
-    # for the moment supports npy and ply
-    if (file_extension == '.npy'):
-        pclTime = np.load(pathToFile)
-        pclTimeSize = np.shape(pclTime)
-    elif (file_extension == '.npz'):
-        pclTime = np.load(pathToFile)
-        pclTime = pclTime['pred']
-        pclTimeSize = np.shape(pclTime)
-    elif (file_extension == '.ply'):
-        ply = PlyData.read(pathToFile)
-        vertex = ply['vertex']
-        (x, y, z) = (vertex[t] for t in ('x', 'y', 'z'))
-        pclTime = np.column_stack((x, y, z))
-    else:
-        print('unsupported file format.')
-        return
+    for deg in range(int(degrees)):
+        radian = deg * np.pi / 180
+        filename, file_extension = os.path.splitext(pathToFile)
+        folder = os.path.dirname(pathToFile)
+        filename = os.path.basename(pathToFile)
 
-    if (len(np.shape(pclTime)) < 3):
-        pclTimeSize = [1, np.shape(pclTime)[0], np.shape(pclTime)[1]]
-        pclTime.resize(pclTimeSize)
-
-    for pcli in range(0, pclTimeSize[0]):
-        pcl = pclTime[pcli, :, :]
-
-        pcl = standardize_bbox(pcl, 2025)
-        # pcl = pcl[:, [2, 0, 1]]
-        # pcl[:, 1] *= 1
-        # pcl[:, 2] += 0.0125
-
-        xml_segments = [xml_head]
-        for i in range(pcl.shape[0]):
-            color = colormap(pcl[i, 0] + 0.5, pcl[i, 1] + 0.5, pcl[i, 2] + 0.5 - 0.0125)
-            xml_segments.append(xml_ball_segment.format(pcl[i, 0], pcl[i, 1], pcl[i, 2], *color))
-        xml_segments.append(xml_tail)
-
-        xml_content = str.join('', xml_segments)
-
-        xmlFile = ("%s/%s_%02d.xml" % (folder, filename, pcli))
-
-        with open(xmlFile, 'w') as f:
-            f.write(xml_content)
-        f.close()
-
-        exrFile = ("%s/%s_%02d.exr" % (folder, filename, pcli))
-        if (not os.path.exists(exrFile)):
-            print(['Running Mitsuba, writing to: ', xmlFile])
-            subprocess.run([PATH_TO_MITSUBA2, xmlFile])
+        # for the moment supports npy and ply
+        if (file_extension == '.npy'):
+            pclTime = np.load(pathToFile)
+            pclTimeSize = np.shape(pclTime)
+        elif (file_extension == '.npz'):
+            pclTime = np.load(pathToFile)
+            pclTime = pclTime['pred']
+            pclTimeSize = np.shape(pclTime)
+        elif (file_extension == '.ply'):
+            ply = PlyData.read(pathToFile)
+            vertex = ply['vertex']
+            (x, y, z) = (vertex[t] for t in ('x', 'y', 'z'))
+            pclTime = np.column_stack((x, y, z))
         else:
-            print('skipping rendering because the EXR file already exists')
+            print('unsupported file format.')
+            return
 
-        png = ("%s/%s_%02d.jpg" % (folder, filename, pcli))
+        if (len(np.shape(pclTime)) < 3):
+            pclTimeSize = [1, np.shape(pclTime)[0], np.shape(pclTime)[1]]
+            pclTime.resize(pclTimeSize)
 
-        print(['Converting EXR to JPG...'])
-        ConvertEXRToJPG(exrFile, png)
+        for pcli in range(0, pclTimeSize[0]):
+            pcl = pclTime[pcli, :, :]
+
+            pcl_old = standardize_bbox(pcl, 2025)
+            pcl_old = pcl_old[:, [2, 0, 1]]
+            pcl = rotation(pcl_old, radian)
+            # pcl = pcl[:, [2, 0, 1]]
+            # pcl[:, 1] *= -1
+            # pcl[:, 2] += 0.0125
+
+            xml_segments = [xml_head]
+            for i in range(pcl.shape[0]):
+                color = colormap(pcl_old[i, 0] + 0.5, pcl_old[i, 1] + 0.5, pcl_old[i, 2] + 0.5 - 0.0125)
+                xml_segments.append(xml_ball_segment.format(pcl[i, 0], pcl[i, 1], pcl[i, 2], *color))
+            xml_segments.append(xml_tail)
+
+            xml_content = str.join('', xml_segments)
+
+            xmlFile = ("%s/%s_%02d_%03d.xml" % (folder, filename, pcli, deg))
+
+            with open(xmlFile, 'w') as f:
+                f.write(xml_content)
+            f.close()
+
+            exrFile = ("%s/%s_%02d_%03d.exr" % (folder, filename, pcli, deg))
+            if (not os.path.exists(exrFile)):
+                print(['Running Mitsuba, writing to: ', xmlFile])
+                subprocess.run([PATH_TO_MITSUBA2, xmlFile])
+            else:
+                print('skipping rendering because the EXR file already exists')
+                # print(['Running Mitsuba, writing to: ', xmlFile])
+                # subprocess.run([PATH_TO_MITSUBA2, xmlFile])
+
+            png = ("%sjpg_new/%s_%02d_%03d.jpg" % (folder, filename, pcli, deg))
+
+            print(['Converting EXR to JPG...'])
+            ConvertEXRToJPG(exrFile, png)
 
 
 if __name__ == "__main__":

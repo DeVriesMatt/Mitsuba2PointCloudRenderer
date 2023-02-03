@@ -25,7 +25,7 @@ xml_head = \
         </transform>
         <float name="fov" value="25"/>
         <sampler type="independent">
-            <integer name="sampleCount" value="200"/>
+            <integer name="sampleCount" value="250"/>
         </sampler>
         <film type="hdrfilm">
             <integer name="width" value="1920"/>
@@ -36,9 +36,9 @@ xml_head = \
     
     <bsdf type="roughplastic" id="surfaceMaterial">
         <string name="distribution" value="ggx"/>
-        <float name="alpha" value="0.05"/>
+        <float name="alpha" value="0.1"/>
         <float name="intIOR" value="1.46"/>
-        <rgb name="diffuseReflectance" value="1,1,1"/> <!-- default 0.5 -->
+        <rgb name="diffuseReflectance" value="0,0,0"/> <!-- default 0.5 -->
     </bsdf>
     
 """
@@ -140,6 +140,13 @@ def ConvertEXRToJPG(exrfile, jpgfile):
     Image.merge("RGB", rgb8).save(jpgfile, "JPEG", quality=95)
 
 
+def rotation(points, theta):
+    R = np.asarray([[np.cos(theta), -np.sin(theta), 0],
+                    [np.sin(theta), np.cos(theta), 0],
+                    [0, 0, 1]])
+    new_points = points @ R
+    return new_points
+
 def main(argv):
     if (len(argv) < 2):
         print('filename to npy/ply is not passed as argument. terminated.')
@@ -175,9 +182,10 @@ def main(argv):
     for pcli in range(0, pclTimeSize[0]):
         pcl = pclTime[pcli, :, :]
 
-        pcl = standardize_bbox(pcl, 2025)
-        # pcl = pcl[:, [2, 0, 1]]
-        # pcl[:, 1] *= 1
+        pcl = standardize_bbox(pcl, 2048)
+        # pcl = rotation(pcl, 110*np.pi/180)
+        pcl = pcl[:, [2, 0, 1]]
+        pcl[:, 1] *= -1
         # pcl[:, 2] += 0.0125
 
         xml_segments = [xml_head]
@@ -188,20 +196,20 @@ def main(argv):
 
         xml_content = str.join('', xml_segments)
 
-        xmlFile = ("%s/%s_%02d.xml" % (folder, filename, pcli))
+        xmlFile = ("%s/%s_%02d_black_4096.xml" % (folder, filename, pcli))
 
         with open(xmlFile, 'w') as f:
             f.write(xml_content)
         f.close()
 
-        exrFile = ("%s/%s_%02d.exr" % (folder, filename, pcli))
+        exrFile = ("%s/%s_%02d_black_4096.exr" % (folder, filename, pcli))
         if (not os.path.exists(exrFile)):
             print(['Running Mitsuba, writing to: ', xmlFile])
             subprocess.run([PATH_TO_MITSUBA2, xmlFile])
         else:
             print('skipping rendering because the EXR file already exists')
 
-        png = ("%s/%s_%02d.jpg" % (folder, filename, pcli))
+        png = ("%s/%s_%02d_black_4096.jpg" % (folder, filename, pcli))
 
         print(['Converting EXR to JPG...'])
         ConvertEXRToJPG(exrFile, png)
